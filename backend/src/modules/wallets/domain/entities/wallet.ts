@@ -1,5 +1,5 @@
+import type { Money } from "../../../../shared/domain/value-objects/money.js";
 import type { Uuid } from "../../../../shared/domain/value-objects/uuid.js";
-import type { Money } from "../value-objects/money.js";
 import { Timestamp } from "../value-objects/timestamp.js";
 
 export interface WalletProps {

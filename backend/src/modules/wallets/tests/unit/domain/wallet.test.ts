@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { Uuid } from "../../../../../shared/domain/value-objects/uuid.js";
-import { Wallet } from "../../../domain/entities/wallet.js";
 import {
 	CurrencyMismatchError,
 	InsufficientFundsError,
-} from "../../../domain/errors/money.errors.js";
-import { Money } from "../../../domain/value-objects/money.js";
+} from "../../../../../shared/domain/errors/money.errors.js";
+import { Money } from "../../../../../shared/domain/value-objects/money.js";
+import { Uuid } from "../../../../../shared/domain/value-objects/uuid.js";
+import { Wallet } from "../../../domain/entities/wallet.js";
 import { Timestamp } from "../../../domain/value-objects/timestamp.js";
 
 const initialCreatedAt = Timestamp.from(new Date("2026-07-24T08:00:00.000Z"));
