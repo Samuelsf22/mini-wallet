@@ -5,8 +5,8 @@ import {
 	InsufficientFundsError,
 	InvalidMoneyError,
 	MoneyOverflowError,
-} from "../errors/money.errors.js";
-import { Money } from "./money.js";
+} from "../../../domain/errors/money.errors.js";
+import { Money } from "../../../domain/value-objects/money.js";
 
 describe("Money", () => {
 	it("creates an immutable zero-valued amount in minor units", () => {
