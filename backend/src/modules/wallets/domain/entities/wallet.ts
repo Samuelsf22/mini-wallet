@@ -1,11 +1,10 @@
+import type { Uuid } from "../../../../shared/domain/value-objects/uuid.js";
 import type { Money } from "../value-objects/money.js";
 import { Timestamp } from "../value-objects/timestamp.js";
-import type { UserId } from "../value-objects/user-id.js";
-import type { WalletId } from "../value-objects/wallet-id.js";
 
 export interface WalletProps {
-	id: WalletId;
-	userId: UserId;
+	id: Uuid;
+	userId: Uuid;
 	balance: Money;
 	createdAt: Timestamp;
 	updatedAt: Timestamp;
@@ -29,8 +28,8 @@ export class Wallet {
 		this._updatedAt = updatedAt;
 	}
 
-	public readonly id: WalletId;
-	public readonly userId: UserId;
+	public readonly id: Uuid;
+	public readonly userId: Uuid;
 	public readonly createdAt: Timestamp;
 
 	public get currency(): string {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { Uuid } from "../../../../../shared/domain/value-objects/uuid.js";
 import { Wallet } from "../../../domain/entities/wallet.js";
 import {
 	CurrencyMismatchError,
@@ -7,8 +8,6 @@ import {
 } from "../../../domain/errors/money.errors.js";
 import { Money } from "../../../domain/value-objects/money.js";
 import { Timestamp } from "../../../domain/value-objects/timestamp.js";
-import { UserId } from "../../../domain/value-objects/user-id.js";
-import { WalletId } from "../../../domain/value-objects/wallet-id.js";
 
 const initialCreatedAt = Timestamp.from(new Date("2026-07-24T08:00:00.000Z"));
 const initialUpdatedAt = Timestamp.from(new Date("2026-07-24T09:00:00.000Z"));
@@ -17,8 +16,8 @@ const userUuid = "0e4a98b5-b77f-4cf6-bf76-258de3ac5124";
 
 const createWallet = (): Wallet =>
 	new Wallet({
-		id: WalletId.of(walletUuid),
-		userId: UserId.of(userUuid),
+		id: Uuid.of(walletUuid),
+		userId: Uuid.of(userUuid),
 		balance: Money.of(500, "USD"),
 		createdAt: initialCreatedAt,
 		updatedAt: initialUpdatedAt,
@@ -38,8 +37,8 @@ describe("Wallet", () => {
 		const wallet = createWallet();
 
 		expect(wallet).toMatchObject({
-			id: WalletId.of(walletUuid),
-			userId: UserId.of(userUuid),
+			id: Uuid.of(walletUuid),
+			userId: Uuid.of(userUuid),
 			balance: Money.of(500, "USD"),
 		});
 		expect(wallet.currency).toBe(wallet.balance.currency);
@@ -48,11 +47,11 @@ describe("Wallet", () => {
 		).toBeUndefined();
 	});
 
-	it("accepts distinct wallet and user identifier types", () => {
+	it("preserves the wallet and user identity fields", () => {
 		const wallet = createWallet();
 
-		expect(wallet.id).toEqual(WalletId.of(walletUuid));
-		expect(wallet.userId).toEqual(UserId.of(userUuid));
+		expect(wallet.id).toEqual(Uuid.of(walletUuid));
+		expect(wallet.userId).toEqual(Uuid.of(userUuid));
 	});
 
 	it("credits the balance and updates the lifecycle timestamp", () => {
