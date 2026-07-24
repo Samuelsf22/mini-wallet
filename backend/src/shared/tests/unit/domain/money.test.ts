@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import {
-	CurrencyMismatchError,
-	InsufficientFundsError,
-	InvalidMoneyError,
-	MoneyOverflowError,
-} from "../../../domain/errors/money.errors.js";
+import { MoneyError } from "../../../domain/errors/money.errors.js";
 import { Money } from "../../../domain/value-objects/money.js";
+
+function expectMoneyError(
+	action: () => unknown,
+	code: MoneyError["code"],
+	details: NonNullable<MoneyError["details"]>,
+): void {
+	let error: unknown;
+
+	try {
+		action();
+	} catch (caughtError) {
+		error = caughtError;
+	}
+
+	expect(error).toBeInstanceOf(MoneyError);
+	expect(error).toMatchObject({ code, details });
+}
 
 describe("Money", () => {
 	it("creates an immutable zero-valued amount in minor units", () => {
@@ -24,8 +36,34 @@ describe("Money", () => {
 		Number.NaN,
 		Number.MAX_SAFE_INTEGER + 1,
 	])("rejects invalid minor units: %s", (minorUnits) => {
-		expect(() => Money.of(minorUnits, "USD")).toThrow(InvalidMoneyError);
+		expectMoneyError(() => Money.of(minorUnits, "USD"), "INVALID_MINOR_UNITS", {
+			minorUnits,
+			currency: "USD",
+		});
 	});
+
+	it.each([
+		{
+			name: "non-number minor units",
+			minorUnits: "100" as unknown as number,
+			currency: "USD",
+			code: "INVALID_MINOR_UNITS" as const,
+		},
+		{
+			name: "non-string currency",
+			minorUnits: 100,
+			currency: 123 as unknown as string,
+			code: "INVALID_CURRENCY" as const,
+		},
+	])(
+		"reports the exact error contract for $name",
+		({ minorUnits, currency, code }) => {
+			expectMoneyError(() => Money.of(minorUnits, currency), code, {
+				minorUnits,
+				currency,
+			});
+		},
+	);
 
 	it("includes invalid money input in its typed error context", () => {
 		let error: unknown;
@@ -36,10 +74,10 @@ describe("Money", () => {
 			error = caughtError;
 		}
 
-		expect(error).toBeInstanceOf(InvalidMoneyError);
+		expect(error).toBeInstanceOf(MoneyError);
 		expect(error).toMatchObject({
-			reason: "minor units must be a non-negative safe integer",
-			context: { currency: "USD", minorUnits: Number.NaN },
+			code: "INVALID_MINOR_UNITS",
+			details: { currency: "USD", minorUnits: Number.NaN },
 		});
 		expect(error).toHaveProperty(
 			"message",
@@ -48,9 +86,19 @@ describe("Money", () => {
 	});
 
 	it.each(["usd", "US", "USDD", "12$"])(
-		"rejects invalid currency code: %s",
+		"reports the stable code and context for invalid currency code: %s",
 		(currency) => {
-			expect(() => Money.of(100, currency)).toThrow(InvalidMoneyError);
+			let error: unknown;
+
+			try {
+				Money.of(100, currency);
+			} catch (caughtError) {
+				error = caughtError;
+			}
+
+			expect(error).toBeInstanceOf(MoneyError);
+			expect(error).toHaveProperty("code", "INVALID_CURRENCY");
+			expect(error).toHaveProperty("details", { minorUnits: 100, currency });
 		},
 	);
 
@@ -73,26 +121,24 @@ describe("Money", () => {
 		expect(balance.compareTo(Money.of(499, "USD"))).toBeGreaterThan(0);
 	});
 
-	it("rejects arithmetic across currencies", () => {
+	it.each([
+		{ name: "addition", action: (usd: Money, eur: Money) => usd.add(eur) },
+		{
+			name: "subtraction",
+			action: (usd: Money, eur: Money) => usd.subtract(eur),
+		},
+		{
+			name: "comparison",
+			action: (usd: Money, eur: Money) => usd.compareTo(eur),
+		},
+	])("reports the exact currency mismatch contract for $name", ({ action }) => {
 		const usd = Money.of(500, "USD");
 		const eur = Money.of(100, "EUR");
 
-		expect(() => usd.add(eur)).toThrow(CurrencyMismatchError);
-		expect(() => usd.subtract(eur)).toThrow(CurrencyMismatchError);
-		expect(() => usd.compareTo(eur)).toThrow(CurrencyMismatchError);
-	});
-
-	it("includes both currency codes in a currency mismatch error", () => {
-		let error: unknown;
-
-		try {
-			Money.of(500, "USD").add(Money.of(100, "EUR"));
-		} catch (caughtError) {
-			error = caughtError;
-		}
-
-		expect(error).toBeInstanceOf(CurrencyMismatchError);
-		expect(error).toMatchObject({ expected: "USD", actual: "EUR" });
+		expectMoneyError(() => action(usd, eur), "CURRENCY_MISMATCH", {
+			expected: "USD",
+			actual: "EUR",
+		});
 	});
 
 	it("rejects subtraction that would make the amount negative", () => {
@@ -106,10 +152,10 @@ describe("Money", () => {
 			error = caughtError;
 		}
 
-		expect(error).toBeInstanceOf(InsufficientFundsError);
+		expect(error).toBeInstanceOf(MoneyError);
 		expect(error).toMatchObject({
-			availableMinorUnits: 500,
-			requestedMinorUnits: 501,
+			code: "INSUFFICIENT_FUNDS",
+			details: { availableMinorUnits: 500, requestedMinorUnits: 501 },
 		});
 	});
 
@@ -119,27 +165,15 @@ describe("Money", () => {
 		);
 	});
 
-	it("rejects additions that would exceed the safe integer limit", () => {
-		const maximum = Money.of(Number.MAX_SAFE_INTEGER, "USD");
-		const one = Money.of(1, "USD");
-
-		expect(() => maximum.add(one)).toThrow(MoneyOverflowError);
-	});
-
-	it("includes operands and currency in an arithmetic overflow error", () => {
-		let error: unknown;
-
-		try {
-			Money.of(Number.MAX_SAFE_INTEGER, "USD").add(Money.of(1, "USD"));
-		} catch (caughtError) {
-			error = caughtError;
-		}
-
-		expect(error).toBeInstanceOf(MoneyOverflowError);
-		expect(error).toMatchObject({
-			leftMinorUnits: Number.MAX_SAFE_INTEGER,
-			rightMinorUnits: 1,
-			currency: "USD",
-		});
+	it("reports the exact arithmetic overflow contract", () => {
+		expectMoneyError(
+			() => Money.of(Number.MAX_SAFE_INTEGER, "USD").add(Money.of(1, "USD")),
+			"AMOUNT_OVERFLOW",
+			{
+				leftMinorUnits: Number.MAX_SAFE_INTEGER,
+				rightMinorUnits: 1,
+				currency: "USD",
+			},
+		);
 	});
 });

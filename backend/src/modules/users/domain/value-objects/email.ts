@@ -1,4 +1,4 @@
-import { InvalidEmailError } from "../errors/user.errors.js";
+import { UserError } from "../errors/user.errors.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
@@ -9,13 +9,13 @@ export class Email {
 
 	public static of(value: string): Email {
 		if (typeof value !== "string") {
-			throw new InvalidEmailError(value);
+			throw UserError.invalidEmail(value);
 		}
 
 		const normalizedValue = value.trim().toLowerCase();
 
 		if (!EMAIL_PATTERN.test(normalizedValue)) {
-			throw new InvalidEmailError(value);
+			throw UserError.invalidEmail(value);
 		}
 
 		return new Email(normalizedValue);

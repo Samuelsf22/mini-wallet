@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { InvalidTimestampError } from "../../../domain/errors/timestamp.errors.js";
+import { WalletError } from "../../../domain/errors/wallet.errors.js";
 import { Timestamp } from "../../../domain/value-objects/timestamp.js";
+
+function expectTimestampError(action: () => unknown, value: unknown): void {
+	let error: unknown;
+
+	try {
+		action();
+	} catch (caughtError) {
+		error = caughtError;
+	}
+
+	expect(error).toBeInstanceOf(WalletError);
+	expect(error).toMatchObject({
+		code: "INVALID_TIMESTAMP",
+		details: { value },
+	});
+}
 
 describe("Timestamp", () => {
 	it("copies dates on construction and retrieval", () => {
@@ -17,9 +33,28 @@ describe("Timestamp", () => {
 	});
 
 	it("rejects invalid dates with a typed domain error", () => {
-		expect(() => Timestamp.from(new Date("invalid"))).toThrow(
-			InvalidTimestampError,
-		);
+		expect(() => Timestamp.from(new Date("invalid"))).toThrow(WalletError);
+	});
+
+	it("exposes a timestamp-specific code and the rejected value", () => {
+		let error: unknown;
+
+		try {
+			Timestamp.from(new Date("invalid"));
+		} catch (caughtError) {
+			error = caughtError;
+		}
+
+		expect(error).toMatchObject({
+			code: "INVALID_TIMESTAMP",
+			details: { value: expect.any(Date) },
+		});
+	});
+
+	it("reports the exact error contract for a non-Date value", () => {
+		const value = "2026-07-24T08:00:00.000Z";
+
+		expectTimestampError(() => Timestamp.from(value as unknown as Date), value);
 	});
 
 	it("can be deterministically created from an injected clock", () => {

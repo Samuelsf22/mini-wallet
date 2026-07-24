@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Uuid } from "../../../../../shared/domain/value-objects/uuid.js";
 import { User } from "../../../domain/entities/user.js";
-import {
-	InvalidPasswordHashError,
-	InvalidUserDateError,
-	InvalidUserNameError,
-} from "../../../domain/errors/user.errors.js";
+import { UserError } from "../../../domain/errors/user.errors.js";
 import { Email } from "../../../domain/value-objects/email.js";
 
 const userId = "0e4a98b5-b77f-4cf6-bf76-258de3ac5124";
@@ -24,6 +20,23 @@ function createUser(
 		updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 		...overrides,
 	});
+}
+
+function expectUserError(
+	action: () => unknown,
+	code: UserError["code"],
+	details: NonNullable<UserError["details"]>,
+): void {
+	let error: unknown;
+
+	try {
+		action();
+	} catch (caughtError) {
+		error = caughtError;
+	}
+
+	expect(error).toBeInstanceOf(UserError);
+	expect(error).toMatchObject({ code, details });
 }
 
 describe("User", () => {
@@ -50,24 +63,93 @@ describe("User", () => {
 		expect(user.fullName).toBe("Alice Doe");
 	});
 
-	it("requires non-empty first and last names", () => {
-		expect(() => createUser({ firstName: "  " })).toThrow(InvalidUserNameError);
-		expect(() => createUser({ lastName: "" })).toThrow(InvalidUserNameError);
+	it.each([
+		{ field: "firstName", value: "  " },
+		{ field: "lastName", value: "" },
+	] as const)(
+		"reports the exact invalid-name contract for $field",
+		({ field, value }) => {
+			expectUserError(() => createUser({ [field]: value }), "INVALID_NAME", {
+				field,
+				value,
+			});
+		},
+	);
+
+	it("reports a stable code and safe context for an invalid password hash", () => {
+		const passwordHash = "  ";
+		let error: unknown;
+
+		try {
+			createUser({ passwordHash });
+		} catch (caughtError) {
+			error = caughtError;
+		}
+
+		expect(error).toBeInstanceOf(UserError);
+		expect(error).toHaveProperty("code", "INVALID_PASSWORD_HASH");
+		expect(error).toHaveProperty("details", { field: "passwordHash" });
+		expect(error).not.toHaveProperty("details.value");
+		expect(JSON.stringify(error)).not.toContain(passwordHash);
 	});
 
-	it("requires a non-empty password hash", () => {
-		expect(() => createUser({ passwordHash: "  " })).toThrow(
-			InvalidPasswordHashError,
+	it("reports the exact safe error contract for a non-string password hash", () => {
+		expectUserError(
+			() =>
+				createUser({
+					passwordHash: 123,
+				} as unknown as Partial<ConstructorParameters<typeof User>[0]>),
+			"INVALID_PASSWORD_HASH",
+			{ field: "passwordHash" },
 		);
 	});
 
-	it("rejects invalid dates and protects its dates from external mutation", () => {
-		expect(() => createUser({ createdAt: new Date("invalid") })).toThrow(
-			InvalidUserDateError,
+	it.each([
+		{ field: "firstName", value: 123 },
+		{ field: "lastName", value: false },
+	] as const)(
+		"reports the exact invalid-name contract for a non-string $field",
+		({ field, value }) => {
+			expectUserError(
+				() =>
+					createUser({ [field]: value } as unknown as Partial<
+						ConstructorParameters<typeof User>[0]
+					>),
+				"INVALID_NAME",
+				{ field, value },
+			);
+		},
+	);
+
+	it("reports a stable code and field context for invalid dates", () => {
+		const invalidCreatedAt = new Date("invalid");
+		let error: unknown;
+
+		try {
+			createUser({ createdAt: invalidCreatedAt });
+		} catch (caughtError) {
+			error = caughtError;
+		}
+
+		expect(error).toBeInstanceOf(UserError);
+		expect(error).toHaveProperty("code", "INVALID_DATE");
+		expect(error).toHaveProperty("details", {
+			field: "createdAt",
+			value: invalidCreatedAt,
+		});
+	});
+
+	it("reports the exact invalid updatedAt contract and protects dates from external mutation", () => {
+		const invalidUpdatedAt = "2026-01-01" as unknown as Date;
+
+		expectUserError(
+			() => createUser({ updatedAt: invalidUpdatedAt }),
+			"INVALID_DATE",
+			{
+				field: "updatedAt",
+				value: invalidUpdatedAt,
+			},
 		);
-		expect(() =>
-			createUser({ updatedAt: "2026-01-01" as unknown as Date }),
-		).toThrow(InvalidUserDateError);
 
 		const createdAt = new Date("2026-01-01T00:00:00.000Z");
 		const user = createUser({ createdAt });
@@ -95,12 +177,13 @@ describe("User", () => {
 			updatedAt: user.updatedAt,
 		};
 
-		expect(() =>
-			user.changeEmail(
-				Email.of("new-address@example.com"),
-				new Date("invalid"),
-			),
-		).toThrow(InvalidUserDateError);
+		const invalidChangedAt = new Date("invalid");
+		expectUserError(
+			() =>
+				user.changeEmail(Email.of("new-address@example.com"), invalidChangedAt),
+			"INVALID_DATE",
+			{ field: "updatedAt", value: invalidChangedAt },
+		);
 
 		expect(user.id).toBe(originalState.id);
 		expect(user.email).toBe(originalState.email);

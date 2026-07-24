@@ -1,9 +1,4 @@
-import {
-	CurrencyMismatchError,
-	InsufficientFundsError,
-	InvalidMoneyError,
-	MoneyOverflowError,
-} from "../errors/money.errors.js";
+import { MoneyError } from "../errors/money.errors.js";
 
 const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
 const MAX_MINOR_UNITS = Number.MAX_SAFE_INTEGER;
@@ -18,17 +13,11 @@ export class Money {
 
 	public static of(minorUnits: number, currency: string): Money {
 		if (!Number.isSafeInteger(minorUnits) || minorUnits < 0) {
-			throw new InvalidMoneyError(
-				"minor units must be a non-negative safe integer",
-				{ minorUnits, currency },
-			);
+			throw MoneyError.invalidMinorUnits(minorUnits, currency);
 		}
 
 		if (!CURRENCY_CODE_PATTERN.test(currency)) {
-			throw new InvalidMoneyError(
-				"currency must be a three-letter uppercase ISO-style code",
-				{ minorUnits, currency },
-			);
+			throw MoneyError.invalidCurrency(minorUnits, currency);
 		}
 
 		return new Money(minorUnits, currency);
@@ -48,7 +37,7 @@ export class Money {
 	public add(other: Money): Money {
 		this.assertSameCurrency(other);
 		if (other.minorUnits > MAX_MINOR_UNITS - this.minorUnits) {
-			throw new MoneyOverflowError(
+			throw MoneyError.amountOverflow(
 				this.minorUnits,
 				other.minorUnits,
 				this.currency,
@@ -62,7 +51,7 @@ export class Money {
 		this.assertSameCurrency(other);
 
 		if (other.minorUnits > this.minorUnits) {
-			throw new InsufficientFundsError(this.minorUnits, other.minorUnits);
+			throw MoneyError.insufficientFunds(this.minorUnits, other.minorUnits);
 		}
 
 		return Money.of(this.minorUnits - other.minorUnits, this.currency);
@@ -70,7 +59,7 @@ export class Money {
 
 	private assertSameCurrency(other: Money): void {
 		if (this.currency !== other.currency) {
-			throw new CurrencyMismatchError(this.currency, other.currency);
+			throw MoneyError.currencyMismatch(this.currency, other.currency);
 		}
 	}
 }

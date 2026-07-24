@@ -1,9 +1,5 @@
 import type { Uuid } from "../../../../shared/domain/value-objects/uuid.js";
-import {
-	InvalidPasswordHashError,
-	InvalidUserDateError,
-	InvalidUserNameError,
-} from "../errors/user.errors.js";
+import { UserError } from "../errors/user.errors.js";
 import type { Email } from "../value-objects/email.js";
 
 export interface UserProps {
@@ -30,7 +26,7 @@ export class User {
 		updatedAt,
 	}: UserProps) {
 		if (typeof passwordHash !== "string" || passwordHash.trim() === "") {
-			throw new InvalidPasswordHashError();
+			throw UserError.invalidPasswordHash();
 		}
 
 		this.id = id;
@@ -77,7 +73,7 @@ function normalizeName(
 	value: unknown,
 ): string {
 	if (typeof value !== "string" || value.trim() === "") {
-		throw new InvalidUserNameError(field, value);
+		throw UserError.invalidName(field, value);
 	}
 
 	return value.trim();
@@ -88,7 +84,7 @@ function cloneValidDate(
 	value: unknown,
 ): Date {
 	if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
-		throw new InvalidUserDateError(field, value);
+		throw UserError.invalidDate(field, value);
 	}
 
 	return new Date(value);

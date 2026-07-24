@@ -1,33 +1,66 @@
-export class InvalidEmailError extends Error {
-	public constructor(public readonly value: unknown) {
-		super(`Email must be a valid address. Received: ${String(value)}.`);
-		this.name = "InvalidEmailError";
-	}
-}
+export type UserErrorCode =
+	| "INVALID_EMAIL"
+	| "INVALID_PASSWORD_HASH"
+	| "INVALID_NAME"
+	| "INVALID_DATE";
 
-export class InvalidPasswordHashError extends Error {
-	public constructor() {
-		super("Password hash must be a non-empty string.");
-		this.name = "InvalidPasswordHashError";
-	}
-}
+export type UserErrorDetails = Readonly<
+	| { value: unknown }
+	| { field: "passwordHash" }
+	| { field: "firstName" | "lastName"; value: unknown }
+	| { field: "createdAt" | "updatedAt"; value: unknown }
+>;
 
-export class InvalidUserNameError extends Error {
-	public constructor(
-		public readonly field: "firstName" | "lastName",
-		public readonly value: unknown,
+export class UserError extends Error {
+	public readonly details?: UserErrorDetails;
+
+	private constructor(
+		public readonly code: UserErrorCode,
+		message: string,
+		details?: UserErrorDetails,
 	) {
-		super(`${field} must be a non-empty string. Received: ${String(value)}.`);
-		this.name = "InvalidUserNameError";
+		super(message);
+		this.name = "UserError";
+		if (details !== undefined) {
+			this.details = Object.freeze(details);
+		}
 	}
-}
 
-export class InvalidUserDateError extends Error {
-	public constructor(
-		public readonly field: "createdAt" | "updatedAt",
-		public readonly value: unknown,
-	) {
-		super(`${field} must be a valid Date. Received: ${String(value)}.`);
-		this.name = "InvalidUserDateError";
+	public static invalidEmail(value: unknown): UserError {
+		return new UserError(
+			"INVALID_EMAIL",
+			`Email must be a valid address. Received: ${String(value)}.`,
+			{ value },
+		);
+	}
+
+	public static invalidPasswordHash(): UserError {
+		return new UserError(
+			"INVALID_PASSWORD_HASH",
+			"Password hash must be a non-empty string.",
+			{ field: "passwordHash" },
+		);
+	}
+
+	public static invalidName(
+		field: "firstName" | "lastName",
+		value: unknown,
+	): UserError {
+		return new UserError(
+			"INVALID_NAME",
+			`${field} must be a non-empty string. Received: ${String(value)}.`,
+			{ field, value },
+		);
+	}
+
+	public static invalidDate(
+		field: "createdAt" | "updatedAt",
+		value: unknown,
+	): UserError {
+		return new UserError(
+			"INVALID_DATE",
+			`${field} must be a valid Date. Received: ${String(value)}.`,
+			{ field, value },
+		);
 	}
 }

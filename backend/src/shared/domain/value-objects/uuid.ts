@@ -1,4 +1,4 @@
-import { InvalidUuidError } from "../errors/uuid.errors.js";
+import { UuidError } from "../errors/uuid.errors.js";
 
 const CANONICAL_UUID_PATTERN =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -10,7 +10,7 @@ export class Uuid {
 
 	public static of(value: string): Uuid {
 		if (typeof value !== "string" || !CANONICAL_UUID_PATTERN.test(value)) {
-			throw new InvalidUuidError(value);
+			throw UuidError.invalid(value);
 		}
 
 		return new Uuid(value);

@@ -1,38 +1,58 @@
-export class InvalidTransactionTypeError extends Error {
-	public constructor(public readonly value: unknown) {
-		super(
-			`Transaction type must be CREDIT or DEBIT. Received: ${String(value)}.`,
-		);
-		this.name = "InvalidTransactionTypeError";
-	}
-}
+export type TransactionErrorCode =
+	| "INVALID_TYPE"
+	| "INVALID_REFERENCE"
+	| "INVALID_DATE"
+	| "INVALID_TEXT";
 
-export class InvalidTransactionReferenceError extends Error {
-	public constructor(public readonly value: unknown) {
-		super(
-			`Transaction reference must be a non-empty string. Received: ${String(value)}.`,
-		);
-		this.name = "InvalidTransactionReferenceError";
-	}
-}
+export type TransactionErrorDetails = Readonly<
+	{ value: unknown } | { field: "counterparty" | "description"; value: unknown }
+>;
 
-export class InvalidTransactionDateError extends Error {
-	public constructor(public readonly value: unknown) {
-		super(
-			`Transaction createdAt must be a valid Date. Received: ${String(value)}.`,
-		);
-		this.name = "InvalidTransactionDateError";
-	}
-}
+export class TransactionError extends Error {
+	public readonly details: TransactionErrorDetails;
 
-export class InvalidTransactionTextError extends Error {
-	public constructor(
-		public readonly field: "counterparty" | "description",
-		public readonly value: unknown,
+	private constructor(
+		public readonly code: TransactionErrorCode,
+		message: string,
+		details: TransactionErrorDetails,
 	) {
-		super(
-			`${field} must be a string when provided. Received: ${String(value)}.`,
+		super(message);
+		this.name = "TransactionError";
+		this.details = Object.freeze(details);
+	}
+
+	public static invalidType(value: unknown): TransactionError {
+		return new TransactionError(
+			"INVALID_TYPE",
+			`Transaction type must be CREDIT or DEBIT. Received: ${String(value)}.`,
+			{ value },
 		);
-		this.name = "InvalidTransactionTextError";
+	}
+
+	public static invalidReference(value: unknown): TransactionError {
+		return new TransactionError(
+			"INVALID_REFERENCE",
+			`Transaction reference must be a non-empty string. Received: ${String(value)}.`,
+			{ value },
+		);
+	}
+
+	public static invalidDate(value: unknown): TransactionError {
+		return new TransactionError(
+			"INVALID_DATE",
+			`Transaction createdAt must be a valid Date. Received: ${String(value)}.`,
+			{ value },
+		);
+	}
+
+	public static invalidText(
+		field: "counterparty" | "description",
+		value: unknown,
+	): TransactionError {
+		return new TransactionError(
+			"INVALID_TEXT",
+			`${field} must be a string when provided. Received: ${String(value)}.`,
+			{ field, value },
+		);
 	}
 }

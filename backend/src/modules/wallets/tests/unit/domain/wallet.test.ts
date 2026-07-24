@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-	CurrencyMismatchError,
-	InsufficientFundsError,
-} from "../../../../../shared/domain/errors/money.errors.js";
+import { MoneyError } from "../../../../../shared/domain/errors/money.errors.js";
 import { Money } from "../../../../../shared/domain/value-objects/money.js";
 import { Uuid } from "../../../../../shared/domain/value-objects/uuid.js";
 import { Wallet } from "../../../domain/entities/wallet.js";
@@ -31,6 +28,26 @@ const walletState = (wallet: Wallet) => ({
 	createdAt: wallet.createdAt.toDate(),
 	updatedAt: wallet.updatedAt.toDate(),
 });
+
+const expectMoneyError = (
+	operation: () => void,
+	code: "INSUFFICIENT_FUNDS" | "CURRENCY_MISMATCH",
+	details:
+		| { availableMinorUnits: number; requestedMinorUnits: number }
+		| { expected: string; actual: string },
+): void => {
+	let error: unknown;
+
+	try {
+		operation();
+	} catch (caughtError) {
+		error = caughtError;
+	}
+
+	expect(error).toBeInstanceOf(MoneyError);
+	expect(error).toMatchObject({ code });
+	expect((error as MoneyError).details).toEqual(details);
+};
 
 describe("Wallet", () => {
 	it("owns a Money balance and derives its currency from that balance", () => {
@@ -80,13 +97,17 @@ describe("Wallet", () => {
 		const wallet = createWallet();
 		const stateBeforeRejection = walletState(wallet);
 
-		expect(() => wallet.debit(Money.of(501, "USD"))).toThrow(
-			InsufficientFundsError,
+		expectMoneyError(
+			() => wallet.debit(Money.of(501, "USD")),
+			"INSUFFICIENT_FUNDS",
+			{ availableMinorUnits: 500, requestedMinorUnits: 501 },
 		);
 		expect(walletState(wallet)).toEqual(stateBeforeRejection);
 
-		expect(() => wallet.credit(Money.of(100, "EUR"))).toThrow(
-			CurrencyMismatchError,
+		expectMoneyError(
+			() => wallet.credit(Money.of(100, "EUR")),
+			"CURRENCY_MISMATCH",
+			{ expected: "USD", actual: "EUR" },
 		);
 		expect(walletState(wallet)).toEqual(stateBeforeRejection);
 	});

@@ -1,11 +1,6 @@
 import type { Money } from "../../../../shared/domain/value-objects/money.js";
 import type { Uuid } from "../../../../shared/domain/value-objects/uuid.js";
-import {
-	InvalidTransactionDateError,
-	InvalidTransactionReferenceError,
-	InvalidTransactionTextError,
-	InvalidTransactionTypeError,
-} from "../errors/transaction.errors.js";
+import { TransactionError } from "../errors/transaction.errors.js";
 
 export const TransactionType = {
 	CREDIT: "CREDIT",
@@ -40,7 +35,7 @@ export class Transaction {
 		createdAt,
 	}: TransactionProps) {
 		if (type !== TransactionType.CREDIT && type !== TransactionType.DEBIT) {
-			throw new InvalidTransactionTypeError(type);
+			throw TransactionError.invalidType(type);
 		}
 
 		this.id = id;
@@ -70,7 +65,7 @@ export class Transaction {
 
 function normalizeRequiredText(value: unknown): string {
 	if (typeof value !== "string" || value.trim() === "") {
-		throw new InvalidTransactionReferenceError(value);
+		throw TransactionError.invalidReference(value);
 	}
 
 	return value.trim();
@@ -85,7 +80,7 @@ function normalizeOptionalText(
 	}
 
 	if (typeof value !== "string") {
-		throw new InvalidTransactionTextError(field, value);
+		throw TransactionError.invalidText(field, value);
 	}
 
 	return value.trim() || undefined;
@@ -93,7 +88,7 @@ function normalizeOptionalText(
 
 function cloneValidDate(value: unknown): Date {
 	if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
-		throw new InvalidTransactionDateError(value);
+		throw TransactionError.invalidDate(value);
 	}
 
 	return new Date(value);

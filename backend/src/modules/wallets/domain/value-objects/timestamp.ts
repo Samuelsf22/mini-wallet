@@ -1,4 +1,4 @@
-import { InvalidTimestampError } from "../errors/timestamp.errors.js";
+import { WalletError } from "../errors/wallet.errors.js";
 
 export class Timestamp {
 	private constructor(private readonly value: Date) {
@@ -7,7 +7,7 @@ export class Timestamp {
 
 	public static from(value: Date): Timestamp {
 		if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
-			throw new InvalidTimestampError(value);
+			throw WalletError.invalidTimestamp(value);
 		}
 
 		return new Timestamp(new Date(value));

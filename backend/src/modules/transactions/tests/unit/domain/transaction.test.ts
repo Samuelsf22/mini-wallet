@@ -6,12 +6,7 @@ import {
 	Transaction,
 	TransactionType,
 } from "../../../domain/entities/transaction.js";
-import {
-	InvalidTransactionDateError,
-	InvalidTransactionReferenceError,
-	InvalidTransactionTextError,
-	InvalidTransactionTypeError,
-} from "../../../domain/errors/transaction.errors.js";
+import { TransactionError } from "../../../domain/errors/transaction.errors.js";
 
 function createTransaction(
 	overrides: Partial<ConstructorParameters<typeof Transaction>[0]> = {},
@@ -25,6 +20,23 @@ function createTransaction(
 		createdAt: new Date("2026-01-01T00:00:00.000Z"),
 		...overrides,
 	});
+}
+
+function expectTransactionError(
+	action: () => unknown,
+	code: TransactionError["code"],
+	details: TransactionError["details"],
+): void {
+	let error: unknown;
+
+	try {
+		action();
+	} catch (caughtError) {
+		error = caughtError;
+	}
+
+	expect(error).toBeInstanceOf(TransactionError);
+	expect(error).toMatchObject({ code, details });
 }
 
 describe("Transaction", () => {
@@ -61,29 +73,94 @@ describe("Transaction", () => {
 		expect(transaction.description).toBeUndefined();
 	});
 
-	it("rejects non-string optional text at the runtime boundary", () => {
-		expect(() =>
-			createTransaction({ counterparty: 123 as unknown as string }),
-		).toThrow(InvalidTransactionTextError);
-		expect(() =>
-			createTransaction({ description: false as unknown as string }),
-		).toThrow(InvalidTransactionTextError);
-	});
+	it.each([
+		{ field: "counterparty", value: 123 },
+		{ field: "description", value: false },
+	] as const)(
+		"reports the exact invalid-text contract for $field",
+		({ field, value }) => {
+			expectTransactionError(
+				() =>
+					createTransaction({ [field]: value } as unknown as Partial<
+						ConstructorParameters<typeof Transaction>[0]
+					>),
+				"INVALID_TEXT",
+				{ field, value },
+			);
+		},
+	);
 
-	it("rejects an empty or non-string reference, invalid type, and invalid date", () => {
-		expect(() => createTransaction({ reference: " " })).toThrow(
-			InvalidTransactionReferenceError,
-		);
-		expect(() =>
-			createTransaction({ reference: 123 as unknown as string }),
-		).toThrow(InvalidTransactionReferenceError);
-		expect(() =>
-			createTransaction({ type: "TRANSFER" as TransactionType }),
-		).toThrow(InvalidTransactionTypeError);
-		expect(() => createTransaction({ createdAt: new Date("invalid") })).toThrow(
-			InvalidTransactionDateError,
-		);
-	});
+	it.each([
+		{
+			name: "an invalid type",
+			overrides: { type: "TRANSFER" as TransactionType },
+			expected: { code: "INVALID_TYPE", details: { value: "TRANSFER" } },
+		},
+		{
+			name: "an invalid reference",
+			overrides: { reference: " " },
+			expected: { code: "INVALID_REFERENCE", details: { value: " " } },
+		},
+		{
+			name: "a non-string reference",
+			overrides: { reference: 123 } as unknown as Partial<
+				ConstructorParameters<typeof Transaction>[0]
+			>,
+			expected: { code: "INVALID_REFERENCE", details: { value: 123 } },
+		},
+		{
+			name: "an invalid date",
+			overrides: { createdAt: new Date("invalid") },
+			expected: {
+				code: "INVALID_DATE",
+				details: { value: new Date("invalid") },
+			},
+		},
+	])(
+		"reports a stable code and context for $name",
+		({ overrides, expected }) => {
+			let error: unknown;
+
+			try {
+				createTransaction(overrides);
+			} catch (caughtError) {
+				error = caughtError;
+			}
+
+			expect(error).toBeInstanceOf(TransactionError);
+			expect(error).toHaveProperty("code", expected.code);
+			expect(error).toHaveProperty("details", expected.details);
+		},
+	);
+
+	it.each([
+		{
+			name: "non-string type",
+			overrides: { type: 123 } as unknown as Partial<
+				ConstructorParameters<typeof Transaction>[0]
+			>,
+			expected: { code: "INVALID_TYPE" as const, details: { value: 123 } },
+		},
+		{
+			name: "non-Date createdAt",
+			overrides: { createdAt: "2026-01-01" } as unknown as Partial<
+				ConstructorParameters<typeof Transaction>[0]
+			>,
+			expected: {
+				code: "INVALID_DATE" as const,
+				details: { value: "2026-01-01" },
+			},
+		},
+	])(
+		"reports the exact error contract for $name",
+		({ overrides, expected }) => {
+			expectTransactionError(
+				() => createTransaction(overrides),
+				expected.code,
+				expected.details,
+			);
+		},
+	);
 
 	it("defensively copies createdAt on input and output", () => {
 		const createdAt = new Date("2026-01-01T00:00:00.000Z");
