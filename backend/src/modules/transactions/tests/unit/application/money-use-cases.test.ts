@@ -300,6 +300,11 @@ describe("TransferMoneyUseCase", () => {
 			error: "INVALID_INPUT",
 		},
 		{
+			name: "overlong idempotency key",
+			input: { ...transferInput(), idempotencyKey: "x".repeat(256) },
+			error: "INVALID_IDEMPOTENCY_KEY",
+		},
+		{
 			name: "invalid amount",
 			input: { ...transferInput(), amount: -1 },
 			error: "INVALID_MINOR_UNITS",
@@ -310,6 +315,34 @@ describe("TransferMoneyUseCase", () => {
 			transferUseCase(store).execute(currentUser, input),
 		).rejects.toMatchObject({ code: error });
 		expect(store.executeCalls).toBe(0);
+	});
+
+	it("reports the idempotency key length without opening an atomic boundary", async () => {
+		const store = standardStore();
+		await expect(
+			transferUseCase(store).execute(currentUser, {
+				...transferInput(),
+				idempotencyKey: "x".repeat(256),
+			}),
+		).rejects.toMatchObject({
+			code: "INVALID_IDEMPOTENCY_KEY",
+			details: { keyLength: 256, maxLength: 255 },
+		});
+		expect(store.executeCalls).toBe(0);
+	});
+
+	it("accepts an idempotency key at the 255-character database limit", async () => {
+		const store = standardStore();
+		const idempotencyKey = "x".repeat(255);
+
+		const result = await transferUseCase(store).execute(currentUser, {
+			...transferInput(),
+			idempotencyKey,
+		});
+
+		expect(result.replayed).toBe(false);
+		expect(result.transaction.reference).toBe(idempotencyKey);
+		expect(store.transactions).toHaveLength(2);
 	});
 });
 

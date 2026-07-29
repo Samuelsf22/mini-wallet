@@ -13,6 +13,8 @@ import {
 	TransactionType,
 } from "../../domain/entities/transaction.js";
 
+export const MAX_IDEMPOTENCY_KEY_LENGTH = 255;
+
 export interface TransferMoneyInput {
 	recipientEmail: string;
 	amount: number;
@@ -46,6 +48,13 @@ export class TransferMoneyUseCase {
 		const amountMinorUnits = Money.of(input.amount, "USD").minorUnits;
 		const description = optionalText("description", input.description);
 		const idempotencyKey = requiredText("idempotencyKey", input.idempotencyKey);
+		const idempotencyKeyLength = Array.from(idempotencyKey).length;
+		if (idempotencyKeyLength > MAX_IDEMPOTENCY_KEY_LENGTH) {
+			throw ApplicationError.invalidIdempotencyKey(
+				idempotencyKeyLength,
+				MAX_IDEMPOTENCY_KEY_LENGTH,
+			);
+		}
 		const occurredAt = Timestamp.now(this.dependencies.clock);
 
 		return this.dependencies.atomicWriteBoundary.execute(async (context) => {

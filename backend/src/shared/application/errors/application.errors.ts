@@ -4,6 +4,7 @@ export type ApplicationErrorCode =
 	| "USER_NOT_FOUND"
 	| "SAME_WALLET_TRANSFER"
 	| "TRANSFER_IN_PROGRESS"
+	| "INVALID_IDEMPOTENCY_KEY"
 	| "IDEMPOTENCY_CONFLICT";
 
 export class ApplicationError extends Error {
@@ -52,6 +53,17 @@ export class ApplicationError extends Error {
 			"IDEMPOTENCY_CONFLICT",
 			"Idempotency key was already used for a different transfer.",
 			{ key },
+		);
+	}
+
+	public static invalidIdempotencyKey(
+		keyLength: number,
+		maxLength: number,
+	): ApplicationError {
+		return new ApplicationError(
+			"INVALID_IDEMPOTENCY_KEY",
+			`Idempotency key must not exceed ${maxLength} characters.`,
+			{ keyLength, maxLength },
 		);
 	}
 
