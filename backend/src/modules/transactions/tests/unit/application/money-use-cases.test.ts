@@ -169,6 +169,22 @@ describe("TransferMoneyUseCase", () => {
 		).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
 	});
 
+	it("serializes concurrent matching requests into one transfer and one replay", async () => {
+		const store = standardStore();
+		const useCase = transferUseCase(store);
+
+		const results = await Promise.all([
+			useCase.execute(currentUser, transferInput()),
+			useCase.execute(currentUser, transferInput()),
+		]);
+
+		expect(results.filter((result) => result.replayed)).toHaveLength(1);
+		expect(results.filter((result) => !result.replayed)).toHaveLength(1);
+		expect(store.transactions).toHaveLength(2);
+		expect(store.balanceOf(IDs.sourceWallet)).toBe(60);
+		expect(store.balanceOf(IDs.targetWallet)).toBe(50);
+	});
+
 	it.each([
 		{
 			name: "recipient email",
@@ -232,34 +248,6 @@ describe("TransferMoneyUseCase", () => {
 		});
 		expect(store.walletLookupCount).toBe(2);
 		expect(store.transactions).toHaveLength(2);
-	});
-
-	it("returns a typed in-progress error for a matching active claim", async () => {
-		let notifyClaim: (() => void) | undefined;
-		const claimed = new Promise<void>((resolve) => {
-			notifyClaim = resolve;
-		});
-		let releaseClaim: (() => void) | undefined;
-		const release = new Promise<void>((resolve) => {
-			releaseClaim = resolve;
-		});
-		const store = standardStore({
-			afterFirstClaim: async () => {
-				notifyClaim?.();
-				await release;
-			},
-		});
-		const useCase = transferUseCase(store);
-
-		const first = useCase.execute(currentUser, transferInput());
-		await claimed;
-		await expect(
-			useCase.execute(currentUser, transferInput()),
-		).rejects.toMatchObject({
-			code: "TRANSFER_IN_PROGRESS",
-		});
-		releaseClaim?.();
-		await expect(first).resolves.toMatchObject({ replayed: false });
 	});
 
 	it("rolls back staged writes and its claim when a transaction write fails", async () => {
@@ -358,9 +346,11 @@ function transferUseCase(
 	boundary: AtomicWriteBoundary,
 	users: UserRepository = standardUsers(),
 ): TransferMoneyUseCase {
+	if (boundary instanceof InMemoryAtomicWriteBoundary) {
+		boundary.users = users;
+	}
 	return new TransferMoneyUseCase({
 		atomicWriteBoundary: boundary,
-		users,
 		createId: createIdGenerator(
 			IDs.transactionOne,
 			IDs.transactionTwo,
@@ -445,7 +435,6 @@ type WriteTarget = "wallet" | "transaction";
 
 interface InMemoryBoundaryOptions {
 	failOn?: WriteTarget;
-	afterFirstClaim?: () => Promise<void>;
 	targetCurrency?: string;
 }
 
@@ -460,17 +449,17 @@ interface TransferClaimRecord {
 class InMemoryAtomicWriteBoundary implements AtomicWriteBoundary {
 	private readonly walletsByUserId = new Map<string, Wallet>();
 	private transferClaims = new Map<string, TransferClaimRecord>();
-	private readonly inProgressClaims = new Map<string, TransferRequestIntent>();
-	private hasPausedFirstClaim = false;
+	private transactionTail: Promise<void> = Promise.resolve();
 	public transactions: Transaction[] = [];
 	public executeCalls = 0;
 	public failOn: WriteTarget | undefined;
 	public failWalletLookups = false;
 	public walletLookupCount = 0;
+	public users: UserRepository = standardUsers();
 
 	public constructor(
 		wallets: Wallet[] = [],
-		private readonly options: InMemoryBoundaryOptions = {},
+		options: InMemoryBoundaryOptions = {},
 	) {
 		this.failOn = options.failOn;
 		for (const wallet of wallets) {
@@ -481,26 +470,48 @@ class InMemoryAtomicWriteBoundary implements AtomicWriteBoundary {
 	public async execute<T>(
 		operation: (context: AtomicWriteContext) => Promise<T>,
 	): Promise<T> {
+		let release!: () => void;
+		const previousTransaction = this.transactionTail;
+		this.transactionTail = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await previousTransaction;
+		try {
 		this.executeCalls += 1;
 		const stagedWallets = new Map(
 			[...this.walletsByUserId].map(([id, value]) => [id, cloneWallet(value)]),
 		);
 		const stagedTransactions = [...this.transactions];
 		const stagedClaims = new Map(this.transferClaims);
-		const claimedKeys = new Set<string>();
+		const wallets = new InMemoryWalletRepository(
+			stagedWallets,
+			() => this.failOn,
+			() => {
+				this.walletLookupCount += 1;
+				return this.failWalletLookups;
+			},
+		);
 		const context: AtomicWriteContext = {
-			wallets: new InMemoryWalletRepository(
-				stagedWallets,
-				() => this.failOn,
-				() => {
-					this.walletLookupCount += 1;
-					return this.failWalletLookups;
-				},
-			),
+			users: this.users,
+			wallets,
 			transactions: new InMemoryTransactionRepository(
 				stagedTransactions,
 				() => this.failOn,
 			),
+			loadTransferWallets: async (sourceUserId, targetUserId) => {
+				const userIds = [sourceUserId, targetUserId].sort((left, right) =>
+					left.value.localeCompare(right.value),
+				);
+				const loaded = new Map<string, Wallet>();
+				for (const userId of userIds) {
+					const wallet = await wallets.findByUserId(userId);
+					if (wallet !== undefined) loaded.set(userId.value, wallet);
+				}
+				return {
+					source: loaded.get(sourceUserId.value),
+					target: loaded.get(targetUserId.value),
+				};
+			},
 			claimTransfer: async (key, intent) => {
 				const completed = stagedClaims.get(key);
 				if (completed !== undefined) {
@@ -519,23 +530,7 @@ class InMemoryAtomicWriteBoundary implements AtomicWriteBoundary {
 						};
 					}
 				}
-				const active = this.inProgressClaims.get(key);
-				if (active !== undefined) {
-					return sameRequestIntent(active, intent)
-						? { status: "in_progress" }
-						: { status: "conflict" };
-				}
-
-				this.inProgressClaims.set(key, intent);
-				claimedKeys.add(key);
 				stagedClaims.set(key, { requestIntent: intent });
-				if (
-					!this.hasPausedFirstClaim &&
-					this.options.afterFirstClaim !== undefined
-				) {
-					this.hasPausedFirstClaim = true;
-					await this.options.afterFirstClaim();
-				}
 				return { status: "claimed" };
 			},
 			completeTransferClaim: async (
@@ -555,16 +550,15 @@ class InMemoryAtomicWriteBoundary implements AtomicWriteBoundary {
 			},
 		};
 
-		try {
-			const result = await operation(context);
-			this.walletsByUserId.clear();
-			for (const [id, wallet] of stagedWallets)
-				this.walletsByUserId.set(id, wallet);
-			this.transactions = stagedTransactions;
-			this.transferClaims = stagedClaims;
-			return result;
+		const result = await operation(context);
+		this.walletsByUserId.clear();
+		for (const [id, wallet] of stagedWallets)
+			this.walletsByUserId.set(id, wallet);
+		this.transactions = stagedTransactions;
+		this.transferClaims = stagedClaims;
+		return result;
 		} finally {
-			for (const key of claimedKeys) this.inProgressClaims.delete(key);
+			release();
 		}
 	}
 

@@ -3,7 +3,6 @@ export type ApplicationErrorCode =
 	| "WALLET_NOT_FOUND"
 	| "USER_NOT_FOUND"
 	| "SAME_WALLET_TRANSFER"
-	| "TRANSFER_IN_PROGRESS"
 	| "INVALID_IDEMPOTENCY_KEY"
 	| "IDEMPOTENCY_CONFLICT";
 
@@ -67,11 +66,4 @@ export class ApplicationError extends Error {
 		);
 	}
 
-	public static transferInProgress(key: string): ApplicationError {
-		return new ApplicationError(
-			"TRANSFER_IN_PROGRESS",
-			"Transfer with this idempotency key is already in progress.",
-			{ key },
-		);
-	}
 }

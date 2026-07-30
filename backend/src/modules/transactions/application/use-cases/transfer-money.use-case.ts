@@ -5,7 +5,6 @@ import { optionalText } from "../../../../shared/application/optional-text.js";
 import { requiredText } from "../../../../shared/application/required-text.js";
 import { Money } from "../../../../shared/domain/value-objects/money.js";
 import type { Uuid } from "../../../../shared/domain/value-objects/uuid.js";
-import type { UserRepository } from "../../../users/application/ports/user-repository.js";
 import { Email } from "../../../users/domain/value-objects/email.js";
 import { Timestamp } from "../../../wallets/domain/value-objects/timestamp.js";
 import {
@@ -30,7 +29,6 @@ export interface TransferMoneyResult {
 
 export interface TransferMoneyDependencies {
 	atomicWriteBoundary: AtomicWriteBoundary;
-	users: UserRepository;
 	createId: () => Uuid;
 	clock?: () => Date;
 }
@@ -71,24 +69,22 @@ export class TransferMoneyUseCase {
 					replayed: true,
 				};
 			}
-			if (claim.status === "in_progress") {
-				throw ApplicationError.transferInProgress(idempotencyKey);
-			}
 			if (claim.status === "conflict") {
 				throw ApplicationError.idempotencyConflict(idempotencyKey);
 			}
-			const recipient =
-				await this.dependencies.users.findByEmail(recipientEmail);
+			const recipient = await context.users.findByEmail(recipientEmail);
 			if (recipient === undefined) {
 				throw ApplicationError.userNotFound(recipientEmail.value);
 			}
-			const sourceWallet = await context.wallets.findByUserId(
+			const wallets = await context.loadTransferWallets(
 				currentUser.userId,
+				recipient.id,
 			);
+			const sourceWallet = wallets.source;
+			const targetWallet = wallets.target;
 			if (sourceWallet === undefined) {
 				throw ApplicationError.walletNotFound(currentUser.userId.value);
 			}
-			const targetWallet = await context.wallets.findByUserId(recipient.id);
 			if (targetWallet === undefined) {
 				throw ApplicationError.walletNotFound(recipient.id.value);
 			}

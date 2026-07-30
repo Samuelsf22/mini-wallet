@@ -16,8 +16,8 @@
 		"check": "biome check .",
 		"test": "vitest",
 		"test:run": "vitest run",
-		"migration:run": "pnpm run build && typeorm migration:run -d dist/infrastructure/persistence/typeorm/data-source.cli.js",
-		"migration:revert": "pnpm run build && typeorm migration:revert -d dist/infrastructure/persistence/typeorm/data-source.cli.js"
+		"migration:run": "pnpm run build && typeorm migration:run -d dist/infrastructure/persistence/typeorm/shared/data-source.cli.js",
+		"migration:revert": "pnpm run build && typeorm migration:revert -d dist/infrastructure/persistence/typeorm/shared/data-source.cli.js"
 	},
 	"keywords": [],
 	"author": "",

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readDatabaseConfig } from "../../config/database.config.js";
-import { createDataSource } from "../../persistence/typeorm/data-source.js";
 import { InitialWalletSchema1710000000000 } from "../../persistence/typeorm/migrations/1710000000000-InitialWalletSchema.js";
+import { createDataSource } from "../../persistence/typeorm/shared/data-source.js";
 
 describe("database configuration", () => {
 	it("validates a complete PostgreSQL configuration without connecting", () => {
