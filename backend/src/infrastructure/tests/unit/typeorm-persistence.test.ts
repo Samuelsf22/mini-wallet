@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { User } from "../../../modules/users/domain/entities/user.js";
+import { Email } from "../../../modules/users/domain/value-objects/email.js";
 import { Uuid } from "../../../shared/domain/value-objects/uuid.js";
 import { TypeormAtomicWriteBoundary } from "../../persistence/typeorm/shared/typeorm-atomic-write-boundary.js";
 import type { TransactionEntity } from "../../persistence/typeorm/transactions/transaction.entity.js";
@@ -7,6 +9,7 @@ import {
 	TransferClaimStatus,
 	TransferIdempotencyClaimEntity,
 } from "../../persistence/typeorm/transactions/transfer-idempotency-claim.entity.js";
+import { TypeormUserRepository } from "../../persistence/typeorm/users/typeorm-user-repository.js";
 import { TypeormWalletRepository } from "../../persistence/typeorm/wallets/typeorm-wallet-repository.js";
 
 const transferIntent = {
@@ -16,6 +19,72 @@ const transferIntent = {
 };
 
 describe("TypeORM mappers", () => {
+	it("persists every user domain field through the user repository", async () => {
+		let saved: unknown;
+		const repository = {
+			save: async (entity: unknown) => {
+				saved = entity;
+			},
+		};
+		const user = new User({
+			id: Uuid.of("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+			email: Email.of("user@example.com"),
+			passwordHash: "hashed-password",
+			firstName: "First",
+			lastName: "Last",
+			createdAt: new Date("2026-01-01T00:00:00.000Z"),
+			updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+		});
+
+		await new TypeormUserRepository({
+			getRepository: () => repository,
+		} as never).save(user);
+
+		expect(saved).toMatchObject({
+			id: user.id.value,
+			email: user.email.value,
+			passwordHash: "hashed-password",
+			firstName: "First",
+			lastName: "Last",
+		});
+	});
+
+	it("maps only the users-email unique constraint to a typed duplicate-email error", async () => {
+		const user = persistedUser();
+		const repository = {
+			save: async () => {
+				throw { code: "23505", constraint: "users_email_key" };
+			},
+		};
+
+		await expect(
+			new TypeormUserRepository({
+				getRepository: () => repository,
+			} as never).save(user),
+		).rejects.toMatchObject({
+			code: "EMAIL_ALREADY_IN_USE",
+			details: { email: "user@example.com" },
+		});
+	});
+
+	it("preserves unrelated persistence errors from the user repository", async () => {
+		const persistenceError = {
+			code: "23505",
+			constraint: "wallets_user_id_key",
+		};
+		const repository = {
+			save: async () => {
+				throw persistenceError;
+			},
+		};
+
+		await expect(
+			new TypeormUserRepository({
+				getRepository: () => repository,
+			} as never).save(persistedUser()),
+		).rejects.toBe(persistenceError);
+	});
+
 	it("reconstructs transaction Money from the persisted transaction currency", () => {
 		const transaction = toDomainTransaction({
 			id: "11111111-1111-1111-1111-111111111111",
@@ -342,6 +411,18 @@ function boundaryWithManager(manager: object): TypeormAtomicWriteBoundary {
 			manager,
 		}),
 	} as never);
+}
+
+function persistedUser(): User {
+	return new User({
+		id: Uuid.of("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+		email: Email.of("user@example.com"),
+		passwordHash: "hashed-password",
+		firstName: "First",
+		lastName: "Last",
+		createdAt: new Date("2026-01-01T00:00:00.000Z"),
+		updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+	});
 }
 
 function completedClaim(): TransferIdempotencyClaimEntity {

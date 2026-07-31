@@ -477,86 +477,89 @@ class InMemoryAtomicWriteBoundary implements AtomicWriteBoundary {
 		});
 		await previousTransaction;
 		try {
-		this.executeCalls += 1;
-		const stagedWallets = new Map(
-			[...this.walletsByUserId].map(([id, value]) => [id, cloneWallet(value)]),
-		);
-		const stagedTransactions = [...this.transactions];
-		const stagedClaims = new Map(this.transferClaims);
-		const wallets = new InMemoryWalletRepository(
-			stagedWallets,
-			() => this.failOn,
-			() => {
-				this.walletLookupCount += 1;
-				return this.failWalletLookups;
-			},
-		);
-		const context: AtomicWriteContext = {
-			users: this.users,
-			wallets,
-			transactions: new InMemoryTransactionRepository(
-				stagedTransactions,
+			this.executeCalls += 1;
+			const stagedWallets = new Map(
+				[...this.walletsByUserId].map(([id, value]) => [
+					id,
+					cloneWallet(value),
+				]),
+			);
+			const stagedTransactions = [...this.transactions];
+			const stagedClaims = new Map(this.transferClaims);
+			const wallets = new InMemoryWalletRepository(
+				stagedWallets,
 				() => this.failOn,
-			),
-			loadTransferWallets: async (sourceUserId, targetUserId) => {
-				const userIds = [sourceUserId, targetUserId].sort((left, right) =>
-					left.value.localeCompare(right.value),
-				);
-				const loaded = new Map<string, Wallet>();
-				for (const userId of userIds) {
-					const wallet = await wallets.findByUserId(userId);
-					if (wallet !== undefined) loaded.set(userId.value, wallet);
-				}
-				return {
-					source: loaded.get(sourceUserId.value),
-					target: loaded.get(targetUserId.value),
-				};
-			},
-			claimTransfer: async (key, intent) => {
-				const completed = stagedClaims.get(key);
-				if (completed !== undefined) {
-					if (!sameRequestIntent(completed.requestIntent, intent))
-						return { status: "conflict" };
-					if (
-						completed.debitTransaction !== undefined &&
-						completed.creditTransaction !== undefined &&
-						completed.newBalance !== undefined
-					) {
-						return {
-							status: "replay",
-							debitTransaction: completed.debitTransaction,
-							creditTransaction: completed.creditTransaction,
-							newBalance: completed.newBalance,
-						};
+				() => {
+					this.walletLookupCount += 1;
+					return this.failWalletLookups;
+				},
+			);
+			const context: AtomicWriteContext = {
+				users: this.users,
+				wallets,
+				transactions: new InMemoryTransactionRepository(
+					stagedTransactions,
+					() => this.failOn,
+				),
+				loadTransferWallets: async (sourceUserId, targetUserId) => {
+					const userIds = [sourceUserId, targetUserId].sort((left, right) =>
+						left.value.localeCompare(right.value),
+					);
+					const loaded = new Map<string, Wallet>();
+					for (const userId of userIds) {
+						const wallet = await wallets.findByUserId(userId);
+						if (wallet !== undefined) loaded.set(userId.value, wallet);
 					}
-				}
-				stagedClaims.set(key, { requestIntent: intent });
-				return { status: "claimed" };
-			},
-			completeTransferClaim: async (
-				key,
-				intent,
-				debitTransaction,
-				creditTransaction,
-				newBalance,
-			) => {
-				const claim = stagedClaims.get(key);
-				if (claim === undefined)
-					throw new Error("Transfer claim was not found.");
-				claim.resolvedIntent = intent;
-				claim.debitTransaction = debitTransaction;
-				claim.creditTransaction = creditTransaction;
-				claim.newBalance = newBalance;
-			},
-		};
+					return {
+						source: loaded.get(sourceUserId.value),
+						target: loaded.get(targetUserId.value),
+					};
+				},
+				claimTransfer: async (key, intent) => {
+					const completed = stagedClaims.get(key);
+					if (completed !== undefined) {
+						if (!sameRequestIntent(completed.requestIntent, intent))
+							return { status: "conflict" };
+						if (
+							completed.debitTransaction !== undefined &&
+							completed.creditTransaction !== undefined &&
+							completed.newBalance !== undefined
+						) {
+							return {
+								status: "replay",
+								debitTransaction: completed.debitTransaction,
+								creditTransaction: completed.creditTransaction,
+								newBalance: completed.newBalance,
+							};
+						}
+					}
+					stagedClaims.set(key, { requestIntent: intent });
+					return { status: "claimed" };
+				},
+				completeTransferClaim: async (
+					key,
+					intent,
+					debitTransaction,
+					creditTransaction,
+					newBalance,
+				) => {
+					const claim = stagedClaims.get(key);
+					if (claim === undefined)
+						throw new Error("Transfer claim was not found.");
+					claim.resolvedIntent = intent;
+					claim.debitTransaction = debitTransaction;
+					claim.creditTransaction = creditTransaction;
+					claim.newBalance = newBalance;
+				},
+			};
 
-		const result = await operation(context);
-		this.walletsByUserId.clear();
-		for (const [id, wallet] of stagedWallets)
-			this.walletsByUserId.set(id, wallet);
-		this.transactions = stagedTransactions;
-		this.transferClaims = stagedClaims;
-		return result;
+			const result = await operation(context);
+			this.walletsByUserId.clear();
+			for (const [id, wallet] of stagedWallets)
+				this.walletsByUserId.set(id, wallet);
+			this.transactions = stagedTransactions;
+			this.transferClaims = stagedClaims;
+			return result;
 		} finally {
 			release();
 		}
@@ -619,6 +622,10 @@ class InMemoryUserRepository implements UserRepository {
 		this.lookupCount += 1;
 		if (this.failLookups) throw new Error("Injected user lookup failure.");
 		return this.usersByEmail.get(email.value);
+	}
+
+	public async save(user: User): Promise<void> {
+		this.usersByEmail.set(user.email.value, user);
 	}
 }
 
